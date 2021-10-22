@@ -42,9 +42,11 @@ end
 
 ---Check whether the line is empty
 ---@param ln string
----@return boolean
+---@return boolean number Is string empty?
+---@return number number Length of the string
 function U.is_empty(ln)
-    return #ln == 0
+    local len = #ln
+    return len == 0, len
 end
 
 ---Takes out the leading indent from lines
@@ -57,12 +59,16 @@ function U.grab_indent(s)
 end
 
 ---TODO: use this function everywhere
----Helper to get padding (I was tired to check this everywhere)
+---Helper to get padding and corresponding regex pattern
 ---NOTE: We can also use function to calculate padding if someone wants more spacing
 ---@param flag boolean
----@return string
+---@return string string Padding chars
+---@return string string Padding pattern
 function U.get_padding(flag)
-    return flag and ' ' or ''
+    if flag then
+        return ' ', '%s?'
+    end
+    return '', ''
 end
 
 -- FIXME This prints `a` in i_CTRL-o
@@ -86,6 +92,21 @@ end
 ---@return boolean|string
 function U.is_fn(fn, ...)
     return type(fn) == 'function' and fn(...)
+end
+
+---Helper to compute the ignore pattern
+---@param ig string|function
+---@return boolean|string
+function U.get_pattern(ig)
+    return ig and (type(ig) == 'string' and ig or U.is_fn(ig))
+end
+
+---Check if the given line is ignored or not with the given pattern
+---@param ln string Line to be ignored
+---@param pat string Lua regex
+---@return boolean
+function U.ignore(ln, pat)
+    return pat and ln:find(pat) ~= nil
 end
 
 ---Get region for vim mode
@@ -251,19 +272,32 @@ function U.is_commented(ln, lcs_esc, rcs_esc, is_pad)
     return ln:find(ll .. '(.-)' .. rr)
 end
 
----Helper to compute the ignore pattern
----@param ig string|function
----@return boolean|string
-function U.get_pattern(ig)
-    return ig and (type(ig) == 'string' and ig or U.is_fn(ig))
+---Check if the string is commented by LHS of commentstring
+---Supports both full/partial blockwise comment detection
+---@param ln string Line to be checked
+---@param lcs_esc string (Escaped) LHS of commentstring
+---@param pp string Padding Padding (@see U.get_padding)
+---@param idx number (Optional) Starting index
+---@return number number Start index of match
+---@return number number End index of match
+function U.is_lcs_commented(ln, lcs_esc, pp, idx)
+    if lcs_esc then
+        return ln:find(lcs_esc .. pp, idx or 1)
+    end
 end
 
----Check if the given line is ignored or not with the given pattern
----@param ln string Line to be ignored
----@param pat string Lua regex
----@return boolean
-function U.ignore(ln, pat)
-    return pat and ln:find(pat) ~= nil
+---Check if the string is commented by RHS of commentstring
+---Supports both full/partial blockwise comment detection
+---@param ln string Line to be checked
+---@param rcs_esc string (Escaped) RHS of commentstring
+---@param pp string Padding Padding (@see U.get_padding)
+---@param idx number (Optional) Starting index
+---@return number number Start index of match
+---@return number number End index of match
+function U.is_rcs_commented(ln, rcs_esc, pp, idx)
+    if rcs_esc then
+        return ln:find(pp .. rcs_esc .. '.-$', idx or 1)
+    end
 end
 
 return U

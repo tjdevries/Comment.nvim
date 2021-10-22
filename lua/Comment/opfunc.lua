@@ -175,43 +175,42 @@ end
 function O.blockwise(p, partial)
     -- Block wise, only when there are more than 1 lines
     local sln, eln = p.lines[1], p.lines[2]
+    local padding, pp = U.get_padding(p.cfg.padding)
     local lcs_esc, rcs_esc = U.escape(p.lcs), U.escape(p.rcs)
 
-    -- These string should be checked for comment/uncomment
-    local sln_check = sln
-    local eln_check = eln
-    if partial then
-        sln_check = sln:sub(p.scol + 1)
-        eln_check = eln:sub(0, p.ecol + 1)
-    end
+    -- Except cmode, other variables only makes sense for uncomment
+    -- As I will get the exact indices of comment
+    local cmode, scol_s, scol_e, ecol_s, ecol_e
 
     -- If given mode is toggle then determine whether to comment or not
-    local cmode
     if p.cmode == U.cmode.toggle then
-        local s_cmt = U.is_commented(sln_check, lcs_esc, nil, p.cfg.padding)
-        local e_cmt = U.is_commented(eln_check, nil, rcs_esc, p.cfg.padding)
-        cmode = (s_cmt and e_cmt) and U.cmode.uncomment or U.cmode.comment
+        scol_s, scol_e = U.is_lcs_commented(sln, lcs_esc, pp, partial and p.scol)
+        ecol_s, ecol_e = U.is_rcs_commented(eln, rcs_esc, pp, partial and p.ecol - #p.rcs)
+        cmode = (scol_s and ecol_s) and U.cmode.uncomment or U.cmode.comment
     else
         cmode = p.cmode
     end
 
-    local l1, l2
+    local srow, erow = p.srow - 1, p.erow - 1
+    local _, space_len = U.grab_indent(sln)
 
     if cmode == U.cmode.uncomment then
-        l1 = U.uncomment_str(sln_check, lcs_esc, nil, p.cfg.padding)
-        l2 = U.uncomment_str(eln_check, nil, rcs_esc, p.cfg.padding)
-    else
-        l1 = U.comment_str(sln_check, p.lcs, nil, p.cfg.padding)
-        l2 = U.comment_str(eln_check, nil, p.rcs, p.cfg.padding)
+        local sidx = partial and p.scol or space_len
+        local eidx = partial and p.ecol + 1 or ecol_e
+        A.nvim_buf_set_text(0, srow, sidx, srow, scol_e, {})
+        A.nvim_buf_set_text(0, erow, ecol_s - 1, erow, eidx, {})
+
+        return cmode
     end
 
-    if partial then
-        l1 = sln:sub(0, p.scol) .. l1
-        l2 = l2 .. eln:sub(p.ecol + 2)
-    end
+    local sln_empty = U.is_empty(sln)
+    local eln_empty, eln_len = U.is_empty(eln)
 
-    A.nvim_buf_set_lines(0, p.srow - 1, p.srow, false, { l1 })
-    A.nvim_buf_set_lines(0, p.erow - 1, p.erow, false, { l2 })
+    local sidx = sln_empty and 0 or (partial and p.scol or space_len)
+    local eidx = eln_empty and 0 or (partial and p.ecol + 1 or eln_len)
+
+    A.nvim_buf_set_text(0, srow, sidx, srow, sidx, { p.lcs .. (sln_empty and '' or padding) })
+    A.nvim_buf_set_text(0, erow, eidx, erow, eidx, { (eln_empty and '' or padding) .. p.rcs })
 
     return cmode
 end
@@ -221,6 +220,8 @@ end
 ---@return integer CMode
 function O.blockwise_x(p)
     local line = p.lines[1]
+    local padding, _ = U.get_padding(p.cfg.padding)
+
     local first = line:sub(0, p.scol)
     local mid = line:sub(p.scol + 1, p.ecol + 1)
     local last = line:sub(p.ecol + 2)
@@ -237,9 +238,8 @@ function O.blockwise_x(p)
     if cmode == U.cmode.uncomment then
         A.nvim_set_current_line(first .. (stripped or mid) .. last)
     else
-        local pad = p.cfg.padding and ' ' or ''
-        local lcs = p.lcs and p.lcs .. pad or ''
-        local rcs = p.rcs and pad .. p.rcs or ''
+        local lcs = p.lcs .. padding
+        local rcs = padding .. p.rcs
         A.nvim_set_current_line(first .. lcs .. mid .. rcs .. last)
     end
 
